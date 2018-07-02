@@ -2,7 +2,60 @@ import csv
 from collections import defaultdict
 import pydotplus
 import numpy as np
+import sklearn
+from sklearn import preprocessing  
 
+trainSampleNum = 50
+testSampleNum = 20
+train_dir = "simple_data/train.txt"
+test_dir = "simple_data/test.txt"
+featureNum = 201
+
+batchSize = 10 
+epochMaxNum = 1000000
+
+def makeFeatureName(featureNum):
+    featureName = {}
+    for index in range(featureNum):
+        szCol = 'Column %d' % index
+        szY = 'F%d' % index
+        featureName[szCol] = str(szY)
+
+    return featureName
+
+def getData(dataDir = "train.txt", isTrain = True):
+    print("start loading data %s..." %(dataDir))
+    '''
+    readin dataset according to dataDir
+    if train dataset is needed
+    return augmented trainingData[m, n+1], the last colomn is label(1 or 0)
+    if test dataset is needed
+    return augmented testData[m, n], without label
+
+    '''
+    if isTrain:
+        data = np.zeros((trainSampleNum, featureNum + 1))
+    else:
+        data = np.zeros((testSampleNum, featureNum))
+
+    f = open(dataDir)  
+    lines = f.readline() 
+    sampleCount = 0
+    while lines:  
+        line = lines.split(' ')
+        for index in range(len(line)):
+            if index == 0:
+                if isTrain:
+                    data[sampleCount, -1] = int(line[0])
+                continue
+            colon = line[index].index(':')
+            data[sampleCount, int(line[index][:colon]) - 1] = float(line[index][colon+1:])
+        lines = f.readline()  
+        sampleCount += 1
+    f.close()  
+    print("finish load data %s..." %(dataDir))
+    
+    return data
 
 # Important part
 class Tree:
@@ -149,8 +202,8 @@ def plot(decisionTree):
             return str(decisionTree.results)
         else:
             szCol = 'Column %s' % decisionTree.col
-            if szCol in dcHeadings:
-                szCol = dcHeadings[szCol]
+            if szCol in featureName:
+                szCol = featureName[szCol]
             if isinstance(decisionTree.value, int) or isinstance(decisionTree.value, float):
                 decision = '%s >= %s?' % (szCol, decisionTree.value)
             else:
@@ -161,111 +214,13 @@ def plot(decisionTree):
 
     print(toString(decisionTree))
 
-
-def dotgraph(decisionTree):
-    global dcHeadings
-    dcNodes = defaultdict(list)
-    """Plots the obtained decision tree. """
-
-    def toString(iSplit, decisionTree, bBranch, szParent="null", indent=''):
-        if decisionTree.results != None:  # leaf node
-            lsY = []
-            for szX, n in decisionTree.results.items():
-                lsY.append('%s:%d' % (szX, n))
-            dcY = {"name": "%s" % ', '.join(lsY), "parent": szParent}
-            dcSummary = decisionTree.summary
-            dcNodes[iSplit].append(['leaf', dcY['name'], szParent, bBranch, dcSummary['impurity'],
-                                    dcSummary['samples']])
-            return dcY
-        else:
-            szCol = 'Column %s' % decisionTree.col
-            if szCol in dcHeadings:
-                szCol = dcHeadings[szCol]
-            if isinstance(decisionTree.value, int) or isinstance(decisionTree.value, float):
-                decision = '%s >= %s' % (szCol, decisionTree.value)
-            else:
-                decision = '%s == %s' % (szCol, decisionTree.value)
-            trueBranch = toString(iSplit + 1, decisionTree.trueBranch, True, decision, indent + '\t\t')
-            falseBranch = toString(iSplit + 1, decisionTree.falseBranch, False, decision, indent + '\t\t')
-            dcSummary = decisionTree.summary
-            dcNodes[iSplit].append([iSplit + 1, decision, szParent, bBranch, dcSummary['impurity'],
-                                    dcSummary['samples']])
-            return
-
-    toString(0, decisionTree, None)
-    lsDot = ['digraph Tree {',
-             'node [shape=box, style="filled, rounded", color="black", fontname=helvetica] ;',
-             'edge [fontname=helvetica] ;'
-             ]
-    i_node = 0
-    dcParent = {}
-    for nSplit, lsY in dcNodes.items():
-        for lsX in lsY:
-            iSplit, decision, szParent, bBranch, szImpurity, szSamples = lsX
-            if type(iSplit) == int:
-                szSplit = '%d-%s' % (iSplit, decision)
-                dcParent[szSplit] = i_node
-                lsDot.append('%d [label=<%s<br/>impurity %s<br/>samples %s>, fillcolor="#e5813900"] ;' % (i_node,
-                                                                                                          decision.replace(
-                                                                                                              '>=',
-                                                                                                              '&ge;').replace(
-                                                                                                              '?', ''),
-                                                                                                          szImpurity,
-                                                                                                          szSamples))
-            else:
-                lsDot.append('%d [label=<impurity %s<br/>samples %s<br/>class %s>, fillcolor="#e5813900"] ;' % (i_node,
-                                                                                                                szImpurity,
-                                                                                                                szSamples,
-                                                                                                                decision))
-
-            if szParent != 'null':
-                if bBranch:
-                    szAngle = '45'
-                    szHeadLabel = 'True'
-                else:
-                    szAngle = '-45'
-                    szHeadLabel = 'False'
-                szSplit = '%d-%s' % (nSplit, szParent)
-                p_node = dcParent[szSplit]
-                if nSplit == 1:
-                    lsDot.append('%d -> %d [labeldistance=2.5, labelangle=%s, headlabel="%s"] ;' % (p_node,
-                                                                                                    i_node, szAngle,
-                                                                                                    szHeadLabel))
-                else:
-                    lsDot.append('%d -> %d ;' % (p_node, i_node))
-            i_node += 1
-    lsDot.append('}')
-    dot_data = '\n'.join(lsDot)
-    return dot_data
-
-def loadCSV(file):
-    """Loads a CSV file and converts all floats and ints into basic datatypes."""
-    def convertTypes(s):
-        s = s.strip()
-        try:
-            return float(s) if '.' in s else int(s)
-        except ValueError:
-            return s
-
-    reader = csv.reader(open(file, 'rt'))
-    dcHeader = {}
-    if bHeader:
-        lsHeader = next(reader)
-        for i, szY in enumerate(lsHeader):
-                szCol = 'Column %d' % i
-                dcHeader[szCol] = str(szY)
-    return dcHeader, [[convertTypes(item) for item in row] for row in reader]
-
-
 if __name__ == '__main__':
-    bHeader = True
-    # the bigger example
-    dcHeadings, trainingData = loadCSV('fishiris.csv') # demo data from matlab
-    decisionTree = buildDecisionTree(trainingData, evaluationFunction=gini)
-    plot(decisionTree)
+    featureName = makeFeatureName(featureNum)
+    data = getData(train_dir, True)
+    min_max_scaler = preprocessing.MinMaxScaler()  
+    data = min_max_scaler.fit_transform(data) 
+
+    decisionTree = buildDecisionTree(data, evaluationFunction=gini)
+    #plot(decisionTree)
     prune(decisionTree, 0.4) # notify, when a branch is pruned (one time in this example)
     plot(decisionTree)
-    #dot_data = dotgraph(decisionTree)
-    #graph = pydotplus.graph_from_dot_data(dot_data)
-    #graph.write_pdf("iris.pdf")
-    #graph.write_png("prune.png")
