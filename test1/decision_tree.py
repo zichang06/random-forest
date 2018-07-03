@@ -5,6 +5,10 @@ import numpy as np
 import sklearn
 from sklearn import preprocessing  
 
+'''
+我现在用训练集作为测试集，效果很差，可能和打乱/预测函数有关
+'''
+
 trainSampleNum = 50
 testSampleNum = 20
 train_dir = "simple_data/train.txt"
@@ -70,6 +74,17 @@ class Tree:
         self.col = col
         self.summary = summary
         self.data = data
+
+    def getLabel(self):
+        if self.results == None:
+            return None
+        else:
+            max_counts = 0
+            for key in self.results.keys():
+                if self.results[key] > max_counts:
+                    label = key
+                    max_counts = self.results[key]
+        return label
 
 
 def calculateDiffCount(datas):
@@ -156,6 +171,7 @@ def buildDecisionTree(rows, evaluationFunction=gini):
         return Tree(results=calculateDiffCount(rows), summary=dcY, data=rows)
 
 
+## 参考博客：https://blog.csdn.net/herosofearth/article/details/52425952
 def prune(tree, miniGain, evaluationFunction=gini):
     print("start pruning...")
     # 剪枝, when gain < mini Gain，合并(merge the trueBranch and the falseBranch)
@@ -179,7 +195,7 @@ def prune(tree, miniGain, evaluationFunction=gini):
 
 def classify(row, tree):
     if tree.results != None:
-        return tree.results
+        return tree.getLabel()
     else:
         branch = None
         v = row[tree.col]
@@ -199,8 +215,8 @@ def predict(data, tree):
     print("start predicting...")
     pred = np.zeros(testSampleNum)
     for index in range(testSampleNum):
-        result = list(classify(data[index], tree).keys())
-        pred[index] = result[0]
+        result = classify(data[index], tree)
+        pred[index] = result
     return pred
 
 
