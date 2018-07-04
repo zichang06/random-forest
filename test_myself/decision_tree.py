@@ -19,7 +19,9 @@ test_dir = "simple_data/test.txt"
 # train_dir = "data/train.txt"
 # test_dir = "data/test.txt"
 
+maxLevel = 2
 featureNum = 201
+
 
 def makeFeatureName(featureNum):
     featureName = {}
@@ -134,12 +136,18 @@ def splitDatas(rows, value, column):
     return (list1, list2)
 
 
-def buildDecisionTree(rows, evaluationFunction=gini):
-    print("start building tree...")
+def buildDecisionTree(rows, evaluationFunction=gini, level=0):
+    '''
+    #print("start building tree...")
     # 递归建立决策树,当gain = 0 时停止递归
     # bulid decision tree by recursive function
     # stop recursive function when gain = 0
     # return tree
+    '''
+
+    # 如果层数大于规定的最大层数，则终止
+    if level >= maxLevel:
+        return Tree(results=calculateDiffCount(rows),  data=rows)
 
     currentGain = evaluationFunction(rows)
     column_length = len(rows[0])
@@ -164,8 +172,8 @@ def buildDecisionTree(rows, evaluationFunction=gini):
 
     # stop or not stop
     if best_gain > 0:
-        trueBranch = buildDecisionTree(best_set[0], evaluationFunction)
-        falseBranch = buildDecisionTree(best_set[1], evaluationFunction)
+        trueBranch = buildDecisionTree(best_set[0], evaluationFunction, level+1)
+        falseBranch = buildDecisionTree(best_set[1], evaluationFunction, level+1)
         return Tree(col=best_value[0], value=best_value[1], trueBranch=trueBranch, falseBranch=falseBranch, summary=dcY)
     else:
         return Tree(results=calculateDiffCount(rows), summary=dcY, data=rows)
@@ -173,7 +181,7 @@ def buildDecisionTree(rows, evaluationFunction=gini):
 
 ## 参考博客：https://blog.csdn.net/herosofearth/article/details/52425952
 def prune(tree, miniGain, evaluationFunction=gini):
-    print("start pruning...")
+    #print("start pruning...")
     # 剪枝, when gain < mini Gain，合并(merge the trueBranch and the falseBranch)
 
     if tree.trueBranch.results == None: prune(tree.trueBranch, miniGain, evaluationFunction)

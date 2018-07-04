@@ -8,9 +8,10 @@ from sklearn.datasets import load_iris
 import math
 import random  
 import decision_tree
-import thread
+import threading
 import time
 from decision_tree import *
+from sklearn import tree
 
 trainSampleNum = 50
 testSampleNum = 50
@@ -23,6 +24,7 @@ test_dir = "simple_data/test.txt"
 # test_dir = "data/test.txt"
 
 featureNum = 201
+threads = []
 
 def writePreToCSV(predictLable, predDir = "predictLable.csv"):
     print("writing to csv...")
@@ -84,7 +86,8 @@ class RandomForestsClassifier:
         self.list_tree = []  # 随机森林
         self.list_random_k = []
 
-    def generateBootstrapSamples(self, data):#构造bootstrap样本
+    #构造bootstrap样本
+    def generateBootstrapSamples(self, data):
             k = int(0.7 * featureNum)
             samples = []
             random_k = random.sample(range(len(data[0])-1), k)
@@ -93,28 +96,50 @@ class RandomForestsClassifier:
                 data1 = data[np.random.randint(len(data))]
                 samples.append([data1[i] for i in random_k])
             return samples,random_k
-        
-    def generateHalfSamples(self, data):#构造bootstrap样本
+
+    #构造bootstrap样本    
+    def generateHalfSamples(self, data):
         rowRange = np.arange(trainSampleNum)
         np.random.shuffle(rowRange)
         sampleNumATree = int(trainSampleNum / 2)
-        #从鸢尾花数据集(容量为150)按照随机均匀抽样的原则选取70%的数据作为训练数据
         training_data = [data[i] for i in rowRange[0:sampleNumATree]]
         return training_data
 
-    def fit(self, data):#构造随机森林
+    #构建一棵树        
+    def buildTree(self, data, index): 
+        print("\nbuilding the %dst tree..." %(index)) 
+        halfData = self.generateHalfSamples(data)
+        samples,random_k = self.generateBootstrapSamples(halfData)
+
+        currentTree = buildDecisionTree(samples, evaluationFunction=gini)
+        prune(currentTree, 0.4)
+        self.list_tree.append(currentTree)
+        self.list_random_k.append(random_k)
+
+        self.printTree(currentTree)
+
+    #多线程构造随机森林
+    def fitWithMultiThread(self, data):
         for i in range(self.n_bootstrapSamples):
-            halfData = self.generateHalfSamples(data)
-            samples,random_k = self.generateBootstrapSamples(halfData)
+            t = threading.Thread(target=self.buildTree,args=(data, i))
+            threads.append(t)
+        
+        for t in threads:
+            t.setDaemon(True)
+            t.start()   
+        
+        for t in threads:
+            t.join()
+        
+        print("finish building forest tree, main thread go on...")
 
-            currentTree = buildDecisionTree(samples, evaluationFunction=gini)
-            prune(currentTree, 0.4)
-            self.list_tree.append(currentTree)
-            self.list_random_k.append(random_k)
-
-            self.printTree(currentTree)
-
-    def predict_tree(self, observation, tree,random_k):#利用决策树进行分类
+    #构造随机森林
+    def fit(self, data):
+        for i in range(self.n_bootstrapSamples):
+            self.buildTree(data, i)
+        
+    #利用决策树进行分类
+    def predict_tree(self, observation, tree,random_k):
         if tree.results != None:
             return tree.getLabel()
         else:
@@ -132,7 +157,8 @@ class RandomForestsClassifier:
                     branch = tree.falseBranch
             return self.predict_tree(observation,branch,random_k)
 
-    def predict_randomForests(self, observation):#利用随机森林对给定观测数据进行分类
+    #利用随机森林对给定观测数据进行分类
+    def predict_randomForests(self, observation):
         results = {}
         for i in range(len(self.list_tree)):
             currentResult = self.predict_tree(observation, self.list_tree[i],self.list_random_k[i])
@@ -146,7 +172,8 @@ class RandomForestsClassifier:
                 max_counts = results[key]
         return finalResult
 
-    def printTree(self, tree,indent='    '):#以文本形式显示决策树
+    #以文本形式显示决策树
+    def printTree(self, tree,indent='    '):
         if tree.results != None:
             print(str(tree.results))
         else:
@@ -164,7 +191,7 @@ if __name__ == '__main__':
 
     classifier = RandomForestsClassifier(n_bootstrapSamples=10)#初始化随机森林
     #classifier.generateBootstrapSamples(training_data)
-    classifier.fit(data)#利用训练数据进行拟合
+    classifier.fitWithMultiThread(data)#利用训练数据进行拟合
 
     testData = getDataTree(train_dir, False)
     testData = min_max_scaler.fit_transform(testData)
