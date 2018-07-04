@@ -181,7 +181,7 @@ if __name__ == '__main__':
     print('>> load training data time %.2fs.' %(loadTrainingDataTime))
 
     #clf = RandomForestClassifier(10)
-    clf = myForest(50)
+    clf = myForest(10)
     print(">> fitting...")
     clf.fit(data, label)
 
