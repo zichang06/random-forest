@@ -44,7 +44,7 @@ class myTree:
         self.label = label  # 本树的label
         self.maxLevel = maxLevel  # 该树最大深度为多少
         self.rows = rows  # 构建本树所运用的样本下标，一维数组
-        self.columns = columns  # 本树所分得特征对应的下标，一维数组  !!!这里需要默认为0~200
+        self.columns = columns  # 本树所分得特征对应的下标，一维数组 
         #data[sample[i]][columns[j]] 表示本棵树的第i个样本，第j个特征
         self.root = None  # 本树的根节点，即一个node
 
@@ -82,19 +82,18 @@ class myTree:
         '''
         划分子集，这里默认特征值都是连续值
         param rows: 该结点拥有data的哪些samples
-        param column: 哪一个特征，
+        param column: 哪一个特征，这里传入的是真实的特征下标
         '''
-        splitFunction = lambda row: self.data[row][column] >= value #!!!不知道这样引用是否可以
+        splitFunction = lambda row: self.data[row][column] >= value 
         rows1 = [row for row in rows if splitFunction(row)]
         rows2 = [row for row in rows if not splitFunction(row)]
         return (rows1,rows2)
 
-    def buildTree(self, rows = [], columns = None, level = 0):
+    def buildTree(self, rows = [], level = 0):
         '''
         构造CART决策树
         param rows: 该结点拥有data的哪些samples
-        param columns: 对应的特征下标，
-        实际上colums 这里用不上，因为CART每一轮都可以选择所有的特征
+        param columns: 对应的特征下标
         '''
         if len(rows) == 0:
             return node()
@@ -106,20 +105,20 @@ class myTree:
         bestCriteria = None
         bestSets = None
 
-        colCount = len(self.data[0])   # 特征数
+        colCount = len(self.columns)   # 特征数
         colRange = np.arange(colCount)  # colRange数组存储特征下标。对某一行的样本来说，
                                         # sample[colRange[j]],就是取该样本第j个特征，colRange数组中的下标
         np.random.shuffle(colRange)  # 乱序特征，存储的是下标, 随机选取特征总数开方的样本进行分裂
         for col in colRange[0:int(math.ceil(math.sqrt(colCount)))]:  # col是colRange数组中的特征下标，即哪一个特征
             colValues = {}  # dict，对于该特征，所有样本共多少种取值
             for row in rows:  # row 是某样本的下标
-                colValues[self.data[row][col]] = 1  # self.data[row][col]这行样本第col个特征的值
+                colValues[self.data[row][self.columns[col]]] = 1  # self.columns[col]]就是真实的特征下标
             for value in colValues.keys():  # 寻找分裂点
-                (rows1,rows2) = self.divideSet(rows,col,value)
+                (rows1,rows2) = self.divideSet(rows,self.columns[col],value)
                 gain = currentGini - (len(rows1)*self.giniEstimate(rows1) + len(rows2)*self.giniEstimate(rows2)) / len(rows)
                 if gain > bestGain and len(rows1) > 0 and len(rows2) > 0:
                     bestGain = gain
-                    bestCriteria = (col,value)
+                    bestCriteria = (self.columns[col],value)
                     bestSets = (rows1,rows2)
         if bestGain > 0:
             trueBranch = self.buildTree(bestSets[0], level = level+1)
@@ -128,13 +127,14 @@ class myTree:
         else:
             return node(results=self.uniqueCounts(rows))
 
-    def fit(self, data, label):
+    def fit(self, data, label, rows, columns):
         '''
         初始化，并构造一棵树
         '''
         self.data = data
         self.label = label
-        self.rows = range(len(data))
+        self.rows = rows
+        self.columns = columns
         
         self.root = self.buildTree(self.rows, level = 0)
     
@@ -146,7 +146,7 @@ class myTree:
         if node.results != None:
             print(str(node.results))
         else:
-            print(str(node.col)+':>='+str(node.value)+'?  ')
+            print('F'+ str(node.col)+' >='+str(node.value)+'?  ')
             print(indent+'T->    ', end=""),
             self.printTree(node.trueBranch, indent + '    ')
             print(indent+'F->    ', end=""),

@@ -1,0 +1,3 @@
+# readme
+有两个类，myTree和myForest，都是我实现的
+其中myForest调用的是sklearn的树，需要为每棵树单独生成数据集

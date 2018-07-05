@@ -13,19 +13,21 @@ import threading
 import time
 import sys
 
+from myTree import myTree
+
 trainSampleNum = 50
 testSampleNum = 20
 train_dir = "simple_data/train.txt"
 test_dir = "simple_data/test.txt"
 treeNum = 100
 
-trainSampleNum = 1719692
-testSampleNum = 429923
-train_dir = "data/train.txt"
-test_dir = "data/test.txt"
-treeNum = 20
+# trainSampleNum = 1719692
+# testSampleNum = 429923
+# train_dir = "data/train.txt"
+# test_dir = "data/test.txt"
+# treeNum = 20
 
-preDir = "myForest_20_mul.csv"
+preDir = "test.csv"
 featureNum = 201
 threads = []
 
@@ -210,12 +212,12 @@ if __name__ == '__main__':
     loadTrainingDataTime = float(time.time() - time_start)
     print('>> load training data time %.2fs.' %(loadTrainingDataTime))
 
-    #clf = RandomForestClassifier(10)
-    clf = myForest(treeNum)
+    clf = myTree(maxLevel=10)
     print(">> fitting...")
-    clf.fitWithMultiThread(data, label)
+    clf.fit(data, label)
 
     fitTime = float(time.time() - time_start)
+    clf.printTree(clf.root)
     print('>> fit time %.2fs.' %(fitTime))
 
 
@@ -224,8 +226,8 @@ if __name__ == '__main__':
     print('>> load test data time %.2fs.' %(loadTestDataTime))
 
     print(">> predicting...")
-    pre = clf.predictWithMultiThread(data)
-    pre = pre.astype(int)
+    pre = clf.predict(data)
+    #pre = pre.astype(int)
     predictTime = float(time.time() - fitTime - time_start - loadTestDataTime)
     print('>> predict time %.2fs.' %(predictTime))
 
