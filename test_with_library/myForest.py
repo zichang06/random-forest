@@ -19,13 +19,13 @@ train_dir = "simple_data/train.txt"
 test_dir = "simple_data/test.txt"
 treeNum = 100
 
-# trainSampleNum = 1719692
-# testSampleNum = 429923
-# train_dir = "data/train.txt"
-# test_dir = "data/test.txt"
-# treeNum = 100
+trainSampleNum = 1719692
+testSampleNum = 429923
+train_dir = "data/train.txt"
+test_dir = "data/test.txt"
+treeNum = 50
 
-preDir = "myForest_100_mul.csv"
+preDir = "myForest_50_mul.csv"
 featureNum = 201
 threads = []
 

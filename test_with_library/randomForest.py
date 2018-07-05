@@ -66,12 +66,13 @@ class RandomForestsClassifier:
         bestCriteria = None
         bestSets = None
         colCount = len(samples[0]) - 1
-        colRange = range(0,colCount)
+        colRange = np.arange(colCount)
+        # colRange = range(0,colCount)
         np.random.shuffle(colRange)
-        for col in colRange[0:int(math.ceil(math.sqrt(colCount)))]:
+        for col in colRange[0:int(math.ceil(math.sqrt(colCount)))]:  # col是colRange数组中的特征下标，即哪一个特征
             colValues = {}
-            for row in samples:
-                colValues[row[col]] = 1
+            for row in samples:  # 真的是这一行样本
+                colValues[row[col]] = 1  # row[col]这行样本第col个特征的值
             for value in colValues.keys():
                 (set1,set2) = self.divideSet(samples,col,value)
                 gain = currentGini - (len(set1)*self.giniEstimate(set1) + len(set2)*self.giniEstimate(set2)) / len(samples)
@@ -147,10 +148,11 @@ class RandomForestsClassifier:
                 finalResult = key
                 max_counts = results[key]
         return finalResult
+        
 if __name__ == '__main__':
     #import randomforest
     iris = load_iris()
-    X = iris.data
+    X = iris.data  # 虽报错，不影响结果
     y = iris.target
     temp_data = np.concatenate([X, y.reshape((150,1))], axis=1)
     #由于上述代码要求输入的观测数据存储在二维列表中，需将numpy二维数组转换成列表

@@ -1,3 +1,20 @@
+import csv
+from collections import defaultdict
+import pandas as pd  
+import numpy as np
+import sklearn
+from sklearn import preprocessing
+from sklearn import tree
+from sklearn import svm
+from sklearn.ensemble import RandomForestClassifier
+import math
+import random  
+import threading
+import time
+import sys
+#??? 没有定义node的self.results啊？？？
+# 构造函数、fit、predict的cols和rows的处理
+
 class node:
     def __init__(self, col=-1, value=None, results=None, trueBranch=None, falseBranch=None):
         self.col = col  # 分裂的是哪个特征
@@ -23,179 +40,134 @@ class node:
 
 # Important part
 class myTree:
-    def __init__(self, data=None, maxLevel=10):
-        self.data = data #本树的data
+    def __init__(self, data=None, label = None, maxLevel=10, rows = None, columns = None):
+        self.data = data  #本树的data
+        self.label = label  # 本树的label
         self.maxLevel = maxLevel  # 该树最大深度为多少
+        self.rows = rows  # 构建本树所运用的样本下标，一维数组
+        self.columns = columns  # 本树所分得特征对应的下标，一维数组  !!!这里需要默认为0~200
+        #data[sample[i]][columns[j]] 表示本棵树的第i个样本，第j个特征
+        self.tree = None  # 本树的根节点，即一个node
 
-    def buildTree(self, data, label):
+    def uniqueCounts(self, rows):
+        '''
+        计算该结点每个类别各有多少样本
+        param rows: 该结点拥有data的哪些samples
+        return: result是dict，label为Key, 对应的值为该结点下某label有多少个样本
+        '''
+        results = {}
+        for i in rows:  # 遍历每一个样本
+            r = self.label[i]
+            if r not in results:
+                results[r] = 0
+            results[r] = results[r]+1
+        return results
+
+    def giniEstimate(self, rows):
+        '''
+        计算该结点的基尼系数
+        param rows: 该结点拥有data的哪些samples
+        参考：https://www.cnblogs.com/pinard/p/6053344.html
+        运用的是该参考博客的第一个公式
+        '''
+        if len(rows)==0: return 0
+        total = len(rows)
+        counts = self.uniqueCounts(rows)
+        gini = 0
+        for target in counts:
+            gini = gini + pow(counts[target],2)
+        gini = 1 - gini / pow(total,2)
+        return gini
+    
+    def divideSet(self, rows, column, value):
+        '''
+        划分子集，这里默认特征值都是连续值
+        param rows: 该结点拥有data的哪些samples
+        param column: 哪一个特征，
+        '''
+        splitFunction = lambda row: self.data[row][column] >= value #!!!不知道这样引用是否可以
+        rows1 = [row for row in rows if splitFunction(row)]
+        rows2 = [row for row in rows if not splitFunction(row)]
+        return (rows1,rows2)
+
+    def buildTree(self, rows = [], columns = None):
         '''
         构造CART决策树
+        param rows: 该结点拥有data的哪些samples
+        param columns: 对应的特征下标，
+        实际上colums 这里用不上，因为CART每一轮都可以选择所有的特征
         '''
-        if len(data) == 0:
+        if len(rows) == 0:
             return node()
-        currentGini = self.giniEstimate(samples)
+        currentGini = self.giniEstimate(rows)
         bestGain = 0
         bestCriteria = None
         bestSets = None
-        colCount = len(samples[0]) - 1
-        colRange = range(0,colCount)
-        np.random.shuffle(colRange)
-        for col in colRange[0:int(math.ceil(math.sqrt(colCount)))]:
-            colValues = {}
-            for row in samples:
-                colValues[row[col]] = 1
-            for value in colValues.keys():
-                (set1,set2) = self.divideSet(samples,col,value)
-                gain = currentGini - (len(set1)*self.giniEstimate(set1) + len(set2)*self.giniEstimate(set2)) / len(samples)
-                if gain > bestGain and len(set1) > 0 and len(set2) > 0:
+
+        colCount = len(self.data[0])   # 特征数
+        colRange = np.arange(colCount)  # colRange数组存储特征下标。对某一行的样本来说，
+                                        # sample[colRange[j]],就是取该样本第j个特征，colRange数组中的下标
+        np.random.shuffle(colRange)  # 乱序特征，存储的是下标, 随机选取特征总数开方的样本进行分裂
+        for col in colRange[0:int(math.ceil(math.sqrt(colCount)))]:  # col是colRange数组中的特征下标，即哪一个特征
+            colValues = {}  # dict，对于该特征，所有样本共多少种取值
+            for row in rows:  # row 是某样本的下标
+                colValues[self.data[row][col]] = 1  # self.data[row][col]这行样本第col个特征的值
+            for value in colValues.keys():  # 寻找分裂点
+                (rows1,rows2) = self.divideSet(rows,col,value)
+                gain = currentGini - (len(rows1)*self.giniEstimate(rows1) + len(rows2)*self.giniEstimate(rows2)) / len(rows)
+                if gain > bestGain and len(rows1) > 0 and len(rows2) > 0:
                     bestGain = gain
                     bestCriteria = (col,value)
-                    bestSets = (set1,set2)
+                    bestSets = (rows1,rows2)
         if bestGain > 0:
             trueBranch = self.buildTree(bestSets[0])
             falseBranch = self.buildTree(bestSets[1])
             return node(col=bestCriteria[0],value=bestCriteria[1],trueBranch=trueBranch,falseBranch=falseBranch)
         else:
-            return node(results=self.uniqueCounts(samples))
+            return node(results=self.uniqueCounts(rows))
 
-
-def calculateDiffCount(datas):
-    # 将输入的数据汇总(input dataSet)
-    # return results Set{type1:type1Count,type2:type2Count ... typeN:typeNCount}
-
-    results = {}
-    for data in datas:
-        # data[-1] means dataType
-        if data[-1] not in results:
-            results[data[-1]] = 1
+    def fit(self, data):
+        '''
+        初始化，并构造一棵树
+        '''
+        self.data = data
+        self.rows = np.arange(data)
+        self.cols = np.arange(data[0])
+        self.tree = self.buildTree(self.rows)
+    
+    def printTree(self, node, indent='    '):  
+        '''
+        以文本形式显示决策树
+        调用：clf.printTree(clf.tree)!!!
+        '''
+        if node.results != None:
+            print(str(node.results))
         else:
-            results[data[-1]] += 1
-    return results
+            print(str(node.col)+':>='+str(node.value)+'?  ')
+            print(indent+'T->    ', end=""),
+            self.printTree(node.trueBranch, indent+indent)
+            print(indent+'F->    ', end=""),
+            self.printTree(node.falseBranch, indent+indent)
 
+    def predict(self, data, node):
+        '''
+        利用决策树进行分类
+        ???还没弄好
+        调用：clf.predict(clf.tree)!!!
+        '''
+        self.data = data
+        self.rows = np.arange(data)
+        self.cols = np.arange(data[0])
 
-def gini(rows):
-    # 计算gini值(Calculate GINI)
-
-    length = len(rows)
-    results = calculateDiffCount(rows)
-    imp = 0.0
-    for i in results:
-        imp += results[i] / length * results[i] / length
-    return 1 - imp
-
-
-def splitDatas(rows, value, column):
-    # 根据条件分离数据集(splitDatas by value,column)
-    # return 2 part(list1,list2)
-
-    list1 = []
-    list2 = []
-    if (isinstance(value, int) or isinstance(value, float)):  # for int and float type
-        for row in rows:
-            if (row[column] >= value):
-                list1.append(row)
-            else:
-                list2.append(row)
-    else:  # for String type
-        for row in rows:
-            if row[column] == value:
-                list1.append(row)
-            else:
-                list2.append(row)
-
-    return (list1, list2)
-
-
-def buildDecisionTree(rows, evaluationFunction=gini, level=0):
-    '''
-    #print("start building tree...")
-    # 递归建立决策树,当gain = 0 时停止递归
-    # bulid decision tree by recursive function
-    # stop recursive function when gain = 0
-    # return tree
-    '''
-
-    # 如果层数大于规定的最大层数，则终止
-    if level >= maxLevel:
-        return Tree(results=calculateDiffCount(rows),  data=rows)
-
-    currentGain = evaluationFunction(rows)
-    column_length = len(rows[0])
-    rows_length = len(rows)
-    best_gain = 0.0
-    best_value = None
-    best_set = None
-
-    # choose the best gain
-    for col in range(column_length - 1):
-        col_value_set = set([x[col] for x in rows])
-        for value in col_value_set:
-            list1, list2 = splitDatas(rows, value, col)
-            p = len(list1) / rows_length
-            gain = currentGain - p * evaluationFunction(list1) - (1 - p) * evaluationFunction(list2)
-            if gain > best_gain:
-                best_gain = gain
-                best_value = (col, value)
-                best_set = (list1, list2)
-
-    dcY = {'impurity': '%.3f' % currentGain, 'samples': '%d' % rows_length}
-
-    # stop or not stop
-    if best_gain > 0:
-        trueBranch = buildDecisionTree(best_set[0], evaluationFunction, level+1)
-        falseBranch = buildDecisionTree(best_set[1], evaluationFunction, level+1)
-        return Tree(col=best_value[0], value=best_value[1], trueBranch=trueBranch, falseBranch=falseBranch, summary=dcY)
-    else:
-        return Tree(results=calculateDiffCount(rows), summary=dcY, data=rows)
-
-
-
-def classify(row, tree):
-    if tree.results != None:
-        return tree.getLabel()
-    else:
-        branch = None
-        v = row[tree.col]
-        if isinstance(v, int) or isinstance(v, float):
-            if v >= tree.value:
-                branch = tree.trueBranch
-            else:
-                branch = tree.falseBranch
+        if node.results != None:
+            return node.getLabel(node.col)
         else:
-            if v == tree.value:
-                branch = tree.trueBranch
+            v = self.data[]
+            branch = None
+            if isinstance(v,int) or isinstance(v,float):
+                if v >= tree.value: branch = tree.trueBranch
+                else: branch = tree.falseBranch
             else:
-                branch = tree.falseBranch
-        return classify(row, branch)
-
-def predict(data, tree):
-    print("start predicting...")
-    pred = np.zeros(testSampleNum)
-    for index in range(testSampleNum):
-        result = classify(data[index], tree)
-        pred[index] = result
-    return pred
-
-
-#下面是辅助代码画出树
-#Unimportant part
-#plot tree and load data
-def plot(decisionTree):
-    """Plots the obtained decision tree. """
-
-    def toString(decisionTree, indent=''):
-        if decisionTree.results != None:  # leaf node
-            return str(decisionTree.results)
-        else:
-            szCol = 'Column %s' % decisionTree.col
-            if szCol in featureName:
-                szCol = featureName[szCol]
-            if isinstance(decisionTree.value, int) or isinstance(decisionTree.value, float):
-                decision = '%s >= %.2f?' % (szCol, decisionTree.value)
-            else:
-                decision = '%s == %.2f' % (szCol, decisionTree.value)
-            trueBranch = indent + 'yes -> ' + toString(decisionTree.trueBranch, indent + '\t\t')
-            falseBranch = indent + 'no  -> ' + toString(decisionTree.falseBranch, indent + '\t\t')
-            return (decision + '\n' + trueBranch + '\n' + falseBranch)
-
-    print(toString(decisionTree))
+                if v == tree.value: branch = tree.trueBranch
+                else: branch = tree.falseBranch
+            return self.predict_tree(observation,branch,random_k)
