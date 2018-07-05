@@ -13,23 +13,24 @@ import threading
 import time
 import sys
 
-# trainSampleNum = 50
-# testSampleNum = 20
-# train_dir = "simple_data/train.txt"
-# test_dir = "simple_data/test.txt"
-# treeNum = 20
+trainSampleNum = 50
+testSampleNum = 20
+train_dir = "simple_data/train.txt"
+test_dir = "simple_data/test.txt"
+treeNum = 100
 
-trainSampleNum = 1719692
-testSampleNum = 429923
-train_dir = "data/train.txt"
-test_dir = "data/test.txt"
-treeNum = 20
+# trainSampleNum = 1719692
+# testSampleNum = 429923
+# train_dir = "data/train.txt"
+# test_dir = "data/test.txt"
+# treeNum = 100
 
+preDir = "myForest_100_mul.csv"
 featureNum = 201
 threads = []
 
 def writeCSV(predictLable, fileName = "pre.csv"):
-    print(">> writing to csv...")
+    print(">> writing to csv %s..." %fileName)
     names = range(testSampleNum) 
     dataframe = pd.DataFrame({'id':names,'label':predictLable})
     dataframe.to_csv(fileName,index=False,sep=',', encoding = "utf-8")
@@ -115,10 +116,10 @@ class myForest:
         '''
         构建一棵树  
         '''
-        print("\nbuilding the %dst tree..." %(index + 1)) 
+        print("split data for the %dst tree..." %(index + 1)) 
         halfData, sampleLabel = self.generateHalfSamples(data, label)
         sampledData, featureIndex = self.generateBootstrapSamples(halfData)
-
+        print("finish spliting, building the %dst tree..." %(index + 1)) 
         currentTree = tree.DecisionTreeClassifier(max_depth = 10)
         currentTree.fit(sampledData, sampleLabel)
 
@@ -143,6 +144,7 @@ class myForest:
         for t in threads:
             t.join()
         
+        threads.clear()
         print("finish building forest tree, main thread go on...")
 
     def fit(self, data, label):
@@ -152,6 +154,36 @@ class myForest:
         for i in range(self.n_bootstrapSamples):
             self.buildTree(data, label, i)
         
+    def treePredict(self, data, results, i):
+        print("split data for the %dst tree..." %(i + 1)) 
+        sampledData = self.getBootstrapSamples(data, self.list_featureIndex[i])
+        print("finish spliting, predicting for the %dst tree..." %(i + 1)) 
+        tmp = self.list_tree[i].predict(sampledData)
+        results[:, i] = tmp
+        del sampledData
+
+    def predictWithMultiThread(self, data):
+        '''
+        多线程利用随机森林对给定观测数据进行分类
+        '''
+        print("predicting...") 
+        results = np.zeros((len(data), self.n_bootstrapSamples))
+
+        for i in range(len(self.list_tree)):
+            t = threading.Thread(target=self.treePredict,args=(data, results, i))
+            threads.append(t)
+
+        for t in threads:
+            t.setDaemon(True)
+            t.start()   
+        
+        for t in threads:
+            t.join()
+        
+        threshold = np.full(len(data), 0.5)
+        tmp = np.mean(results, axis=1) # 计算每一行的均值
+        finalResult = np.greater(tmp, threshold)
+        return finalResult
 
     def predict(self, data):
         '''
@@ -161,18 +193,16 @@ class myForest:
         results = np.zeros((len(data), self.n_bootstrapSamples))
         
         for i in range(len(self.list_tree)):
-            sampledData = self.getBootstrapSamples(data, self.list_featureIndex[i])
-            tmp = self.list_tree[i].predict(sampledData)
-            results[:, i] = tmp
+            self.treePredict( data, results, i)
         
         threshold = np.full(len(data), 0.5)
         tmp = np.mean(results, axis=1) # 计算每一行的均值
         finalResult = np.greater(tmp, threshold)
         return finalResult
 
-
 if __name__ == '__main__':
     time_start=time.time()
+    print('>> my Forest with %d trees.' %(treeNum))
 
     data = getData(train_dir, True)
     label = data[:,-1]
@@ -181,9 +211,9 @@ if __name__ == '__main__':
     print('>> load training data time %.2fs.' %(loadTrainingDataTime))
 
     #clf = RandomForestClassifier(10)
-    clf = myForest(10)
+    clf = myForest(treeNum)
     print(">> fitting...")
-    clf.fit(data, label)
+    clf.fitWithMultiThread(data, label)
 
     fitTime = float(time.time() - time_start)
     print('>> fit time %.2fs.' %(fitTime))
@@ -194,9 +224,9 @@ if __name__ == '__main__':
     print('>> load test data time %.2fs.' %(loadTestDataTime))
 
     print(">> predicting...")
-    pre = clf.predict(data)
+    pre = clf.predictWithMultiThread(data)
     pre = pre.astype(int)
     predictTime = float(time.time() - fitTime - time_start - loadTestDataTime)
     print('>> predict time %.2fs.' %(predictTime))
 
-    writeCSV(pre, "myForest_50_mul.csv")
+    writeCSV(pre, preDir)
