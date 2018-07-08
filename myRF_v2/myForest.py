@@ -7,6 +7,7 @@ from sklearn import preprocessing
 from sklearn import tree
 from sklearn import svm
 from sklearn.ensemble import RandomForestClassifier
+from collections import OrderedDict
 import math
 import random  
 import threading
@@ -19,13 +20,15 @@ trainSampleNum = 50
 testSampleNum = 20
 train_dir = "simple_data/train.txt"
 test_dir = "simple_data/test.txt"
-treeNum = 100
+treeNum = 1
+maxDepth = 5
 
-# trainSampleNum = 1719692
-# testSampleNum = 429923
-# train_dir = "data/train.txt"
-# test_dir = "data/test.txt"
-# treeNum = 20
+trainSampleNum = 1719692
+testSampleNum = 429923
+train_dir = "data/train.txt"
+test_dir = "data/test.txt"
+treeNum = 1
+maxDepth = 5
 
 preDir = "test.csv"
 featureNum = 201
@@ -68,75 +71,86 @@ def getData(dataDir = "train.txt", isTrain = True):
         sampleCount += 1
         sys.stdout.write('\r>> %d ' % (sampleCount))
     f.close()  
-    print(">> finish load data %s..." %(dataDir))
+    print("\n>> finish load data %s..." %(dataDir))
     
     return data
 
-class myForest:
+def sortFeatures(data, label):
     '''
     '''
-    def __init__(self, n_bootstrapSamples=10):
-        self.n_bootstrapSamples = n_bootstrapSamples
-        self.list_tree = []  # 随机森林
-        self.list_featureIndex= [] 
+    sortedFeatures = []
+    for j in range(len(data[0])):
+        results = {}
+        for i in range(len(data)):
+            r = data[i][j]
+            if r not in results:
+                results[r] = {1: [], 0:[]}
+            if label[i] == 1:
+                results[r][1].append(i)
+            if label[i] == 0:
+                results[r][0].append(i)
+        results = OrderedDict(sorted(results.items()))
+        sortedFeatures.append(results)
+    print(">>finish sorting Features.")
+    return sortedFeatures
 
-    
-    def generateBootstrapSamples(self, data):
+class myForest:
+    def __init__(self, n_bootstrapSamples=10, maxDepth = 10):
+        self.n_bootstrapSamples = n_bootstrapSamples
+        self.list_tree = []  
+        self.list_featureIndex= [] 
+        self.maxDepth = maxDepth
+
+    def generateBootstrapSamples(self):
         '''
-        构造bootstrap样本，对已得一般的样本随机选取70%的特征
+        构造bootstrap样本，随机选取50%的样本，并随机选取70%的特征
+        返回两个list，rows和columns
         '''
         k = int(0.7 * featureNum)
-        featureIndex = random.sample(range(len(data[0])-1), k)
-        sampledData = np.zeros((len(data), k))
-        for i in range(k):
-            sampledData[:, i] = [x[featureIndex[i]] for x in data]
+        columns = random.sample(range(len(data[0])-1), k)
 
-        return sampledData, featureIndex
-
-    def getBootstrapSamples(self, data, featureIndex):
-        '''
-        根据该树的featureIndex,构建样本
-        '''
-        sampledData = np.zeros((len(data), len(featureIndex)))
-        for i in range(len(featureIndex)):
-            sampledData[:, i] = [x[featureIndex[i]] for x in data]
-
-        return sampledData
-
-    def generateHalfSamples(self, data, label):
-        '''
-        随机选取一半的样本  
-        '''
         rowRange = np.arange(trainSampleNum)
         np.random.shuffle(rowRange)
         halfSampleNum = int(trainSampleNum / 2)
-        halfData = [data[i] for i in rowRange[0:halfSampleNum]]
-        halfLabel = [label[i] for i in rowRange[0:halfSampleNum]]
-        return halfData, halfLabel
+        rows = rowRange[:halfSampleNum]
+
+        return rows, columns
      
-    def buildTree(self, data, label, index): 
+    def buildTree(self, index): 
         '''
         构建一棵树  
         '''
-        print("split data for the %dst tree..." %(index + 1)) 
-        halfData, sampleLabel = self.generateHalfSamples(data, label)
-        sampledData, featureIndex = self.generateBootstrapSamples(halfData)
-        print("finish spliting, building the %dst tree..." %(index + 1)) 
-        currentTree = tree.DecisionTreeClassifier(max_depth = 10)
-        currentTree.fit(sampledData, sampleLabel)
+        # 返回两个list
+        rows, columns = self.generateBootstrapSamples()
+        print("building the %dst tree..." %(index + 1)) 
+        currentTree = myTree(maxLevel = self.maxDepth)
+        currentTree.fit(data = self.data, label = self.label, sortedFeatures = self.sortedFeatures, rows = rows, columns = columns)
 
         self.list_tree.append(currentTree)
-        self.list_featureIndex.append(featureIndex)
+        self.list_featureIndex.append(columns)
+        print("finish building the %dst tree..." %(index + 1)) 
 
-        del halfData, sampleLabel, sampledData, featureIndex
+    def fit(self, data, label, sortedFeatures):
+        '''
+        构造随机森林,不是多线程
+        '''
+        self.data = data
+        self.label = label
+        self.sortedFeatures = sortedFeatures
 
-
-    def fitWithMultiThread(self, data, label):
+        for i in range(self.n_bootstrapSamples):
+            self.buildTree(i)
+        
+    def fitWithMultiThread(self, data, label, sortedFeatures):
         '''
         多线程构造随机森林
         '''
+        self.data = data
+        self.label = label
+        self.sortedFeatures = sortedFeatures
+
         for i in range(self.n_bootstrapSamples):
-            t = threading.Thread(target=self.buildTree,args=(data, label, i))
+            t = threading.Thread(target=self.buildTree,args=(i,))
             threads.append(t)
         
         for t in threads:
@@ -149,30 +163,41 @@ class myForest:
         threads.clear()
         print("finish building forest tree, main thread go on...")
 
-    def fit(self, data, label):
+    def treePredict(self, results, i):
         '''
-        构造随机森林,不是多线程
+        一棵树预测
         '''
-        for i in range(self.n_bootstrapSamples):
-            self.buildTree(data, label, i)
-        
-    def treePredict(self, data, results, i):
-        print("split data for the %dst tree..." %(i + 1)) 
-        sampledData = self.getBootstrapSamples(data, self.list_featureIndex[i])
-        print("finish spliting, predicting for the %dst tree..." %(i + 1)) 
-        tmp = self.list_tree[i].predict(sampledData)
+        print("predicting for the %dst tree..." %(i + 1)) 
+        tmp = self.list_tree[i].predict(self.data)
         results[:, i] = tmp
-        del sampledData
+        print("finish predicting for the %dst tree..." %(i + 1)) 
+
+    def predict(self, data):
+        '''
+        利用随机森林对给定观测数据进行分类
+        '''
+        print("predicting...") 
+        self.data = data
+        results = np.zeros((len(self.data), self.n_bootstrapSamples))
+        
+        for i in range(len(self.list_tree)):
+            self.treePredict(results, i)
+        
+        threshold = np.full(len(self.data), 0.5)
+        tmp = np.mean(results, axis=1) # 计算每一行的均值
+        finalResult = np.greater(tmp, threshold)
+        return finalResult
 
     def predictWithMultiThread(self, data):
         '''
         多线程利用随机森林对给定观测数据进行分类
         '''
+        self.data = data
         print("predicting...") 
-        results = np.zeros((len(data), self.n_bootstrapSamples))
+        results = np.zeros((len(self.data), self.n_bootstrapSamples))
 
         for i in range(len(self.list_tree)):
-            t = threading.Thread(target=self.treePredict,args=(data, results, i))
+            t = threading.Thread(target=self.treePredict,args=(results, i))
             threads.append(t)
 
         for t in threads:
@@ -182,42 +207,29 @@ class myForest:
         for t in threads:
             t.join()
         
-        threshold = np.full(len(data), 0.5)
-        tmp = np.mean(results, axis=1) # 计算每一行的均值
-        finalResult = np.greater(tmp, threshold)
-        return finalResult
-
-    def predict(self, data):
-        '''
-        利用随机森林对给定观测数据进行分类
-        '''
-        print("predicting...") 
-        results = np.zeros((len(data), self.n_bootstrapSamples))
-        
-        for i in range(len(self.list_tree)):
-            self.treePredict( data, results, i)
-        
-        threshold = np.full(len(data), 0.5)
+        threshold = np.full(len(self.data), 0.5)
         tmp = np.mean(results, axis=1) # 计算每一行的均值
         finalResult = np.greater(tmp, threshold)
         return finalResult
 
 if __name__ == '__main__':
     time_start=time.time()
-    print('>> my Forest with %d trees.' %(treeNum))
+    print('>> my Forest with %d trees(depth: %d)' %(treeNum, maxDepth))
 
     data = getData(train_dir, True)
     label = data[:,-1]
     data = data[:, :-1]   
+    sortedFeatures = sortFeatures(data, label)
     loadTrainingDataTime = float(time.time() - time_start)
     print('>> load training data time %.2fs.' %(loadTrainingDataTime))
 
-    clf = myTree(maxLevel=10)
+    #clf = RandomForestClassifier(10)
+    clf = myForest(treeNum, maxDepth)
     print(">> fitting...")
-    clf.fit(data, label)
+    #clf.fit(data, label, sortedFeatures)
+    clf.fitWithMultiThread(data, label, sortedFeatures)
 
     fitTime = float(time.time() - time_start)
-    clf.printTree(clf.root)
     print('>> fit time %.2fs.' %(fitTime))
 
 
@@ -226,8 +238,9 @@ if __name__ == '__main__':
     print('>> load test data time %.2fs.' %(loadTestDataTime))
 
     print(">> predicting...")
-    pre = clf.predict(data)
-    #pre = pre.astype(int)
+    #pre = clf.predict(data)
+    pre = clf.predictWithMultiThread(data)
+    pre = pre.astype(int)
     predictTime = float(time.time() - fitTime - time_start - loadTestDataTime)
     print('>> predict time %.2fs.' %(predictTime))
 

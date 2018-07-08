@@ -12,6 +12,8 @@ import random
 import threading
 import time
 import sys
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 from myTree import myTree
 
@@ -19,15 +21,15 @@ trainSampleNum = 50
 testSampleNum = 20
 train_dir = "simple_data/train.txt"
 test_dir = "simple_data/test.txt"
-treeNum = 1
+treeNum = 10
 maxDepth = 5
 
-# trainSampleNum = 1719692
-# testSampleNum = 429923
-# train_dir = "data/train.txt"
-# test_dir = "data/test.txt"
-# treeNum = 5
-# maxDepth = 5
+trainSampleNum = 1719692
+testSampleNum = 429923
+train_dir = "data/train.txt"
+test_dir = "data/test.txt"
+treeNum = 1
+maxDepth = 5
 
 preDir = "test.csv"
 featureNum = 201

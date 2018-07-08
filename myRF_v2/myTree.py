@@ -49,67 +49,73 @@ class myTree:
         #data[sample[i]][columns[j]] 表示本棵树的第i个样本，第j个特征
         self.root = None  # 本树的根节点，即一个node
 
-    def uniqueCounts(self, rows):
+    def uniqueCounts(self, Trows, Frows):
         '''
         计算该结点每个类别各有多少样本
         param rows: 该结点拥有data的哪些samples
         return: result是dict，label为Key, 对应的值为该结点下某label有多少个样本
         '''
-        results = {}
-        count = 0
-        for i in rows:  # 遍历每一个样本
-            r = self.label[i]
-
-            count += 1
-            sys.stdout.write("\r--> uniqueCounts have done sample %d." %count)
-
-            if r not in results:
-                results[r] = 0
-            results[r] = results[r]+1
-
-        sys.stdout.write("\r--> uniqueCounts finish.\n")
+        results = {1:len(Trows), 0:len(Frows)}
         return results
 
-    def giniEstimate(self, rows):
+    def giniEstimate(self, Trows, Frows):
         '''
         计算该结点的基尼系数
         param rows: 该结点拥有data的哪些samples
         参考：https://www.cnblogs.com/pinard/p/6053344.html
         运用的是该参考博客的第一个公式
         '''
-        if len(rows)==0: return 0
-        total = len(rows)
-        counts = self.uniqueCounts(rows)
-        gini = 0
-        for target in counts:
-            gini = gini + pow(counts[target],2)
-        gini = 1 - gini / pow(total,2)
+        total = len(Trows) + len(Frows)
+        if total == 0: return 0
+        gini = pow(len(Trows), 2) + pow(len(Frows), 2)
+        gini = 1 - gini / pow(total, 2)
         return gini
     
-    def divideSet(self, rows, column, value):
+    def divideSet(self, Trows, Frows, column, value):
         '''
         划分子集，这里默认特征值都是连续值
+        大的放在右子树1 trueBranch
+        小的放在左子树2 frueBranch
         param rows: 该结点拥有data的哪些samples
         param column: 哪一个特征，这里传入的是真实的特征下标
         '''
-        splitFunction = lambda row: self.data[row][column] >= value 
-        rows1 = [row for row in rows if splitFunction(row)]
-        rows2 = [row for row in rows if not splitFunction(row)]
-        return (rows1,rows2)
+        Trows1 = []
+        Frows1 = []
+        Trows2 = [] 
+        Frows2 = []
 
-    def buildTree(self, rows = [], level = 0):
+        # lambda???
+        for item in self.sortedFeatures[column].keys():
+            if  item >= value:  #!!!不确定这样是否对，item是社么样
+                Trows1 += self.sortedFeatures[column][item][1]
+                Frows1 += self.sortedFeatures[column][item][0]
+            else:
+                Trows2 += self.sortedFeatures[column][item][1]
+                Frows2 += self.sortedFeatures[column][item][0]
+
+        Trows1 = list(set(Trows1).intersection(set(Trows)))
+        Frows1 = list(set(Frows1).intersection(set(Frows)))
+        Trows2 = list(set(Trows2).intersection(set(Trows)))
+        Frows2 = list(set(Frows2).intersection(set(Frows)))
+
+        # splitFunction = lambda row: self.data[row][column] >= value 
+        # rows1 = [row for row in rows if splitFunction(row)]
+        # rows2 = [row for row in rows if not splitFunction(row)]
+        return (Trows1, Frows1, Trows2, Frows2)
+
+    def buildTree(self, Trows = [], Frows = [], level = 0):
         '''
         构造CART决策树
         param rows: 该结点拥有data的哪些samples
         param columns: 对应的特征下标
         '''
-        sys.stdout.write("\r--> now in depth %d.\n" %level)
-        if len(rows) == 0:
+        sys.stdout.write("--> now in depth %d. \n" %level)
+        if len(Trows) + len(Frows) == 0:
             return node()
         if level > self.maxLevel:
-            return node(results=self.uniqueCounts(rows))
+            return node(results=self.uniqueCounts(Trows, Frows))
 
-        currentGini = self.giniEstimate(rows)
+        currentGini = self.giniEstimate(Trows, Frows)
         bestGain = 0
         bestCriteria = None
         bestSets = None
@@ -118,32 +124,33 @@ class myTree:
         colRange = np.arange(colCount)  # colRange数组存储特征下标。对某一行的样本来说，
                                         # sample[colRange[j]],就是取该样本第j个特征，colRange数组中的下标
         np.random.shuffle(colRange)  # 乱序特征，存储的是下标, 随机选取特征总数开方的样本进行分裂
-        count = 0
-        for col in colRange[0:int(math.ceil(math.sqrt(colCount)))]:  # col是colRange数组中的特征下标，即哪一个特征
-            count+=1  
-            sys.stdout.write("\r--> begin to calculate %dst feature." %count)
-
-            colValues = {}  # dict，对于该特征，所有样本共多少种取值
-            for row in rows:  # row 是某样本的下标
-                colValues[self.data[row][self.columns[col]]] = 1  # self.columns[col]]就是真实的特征下标
-            for value in colValues.keys():  # 寻找分裂点 
-                (rows1,rows2) = self.divideSet(rows,self.columns[col],value)
-                gain = currentGini - (len(rows1)*self.giniEstimate(rows1) + len(rows2)*self.giniEstimate(rows2)) / len(rows)
-                if gain > bestGain and len(rows1) > 0 and len(rows2) > 0:
+        countCol = 0
+        total = int(math.ceil(math.sqrt(colCount)))
+        for col in colRange[0:total]:  # self.columns[col]是原来真正的哪一个特征
+            countCol+=1
+            sys.stdout.write("--> -- the %dst feature in total of %d. \n" %(countCol, total))
+            colValues = self.sortedFeatures[self.columns[col]]  # dict，对于该特征，所有样本共多少种取值
+            count = 0
+            for value in colValues.keys():  # 寻找分裂点
+                count += 1
+                sys.stdout.write("--> find the %d st split point of %d in total. \n" %(count, len(colValues.keys())))
+                if count == 1 or count == len(colValues):
+                    continue  # 取第一个值和最后一个值做分裂点毫无意义
+                (Trows1, Frows1, Trows2, Frows2) = self.divideSet(Trows, Frows, self.columns[col], value)
+                tmp =  (len(Trows1) + len(Frows1)) * self.giniEstimate(Trows1, Frows1) + (len(Trows2) + len(Frows2)) * self.giniEstimate(Trows2, Frows2)
+                gain = currentGini - tmp / (len(Trows) + len(Frows))
+                if gain > bestGain and len(Trows1) + len(Frows1) > 0 and len(Trows2) + len(Frows2) > 0:
                     bestGain = gain
-                    bestCriteria = (self.columns[col],value)
-                    bestSets = (rows1,rows2)
-
-            sys.stdout.write("\r--> finish calculate %dst feature." %count)
-        sys.stdout.write("\r--> finishing this leave ddepth = %d.\n" %level)
+                    bestCriteria = (self.columns[col], value)
+                    bestSets = (Trows1, Frows1, Trows2, Frows2)
         if bestGain > 0:
-            trueBranch = self.buildTree(bestSets[0], level = level+1)
-            falseBranch = self.buildTree(bestSets[1], level = level+1)
-            return node(col=bestCriteria[0],value=bestCriteria[1],trueBranch=trueBranch,falseBranch=falseBranch)
+            trueBranch = self.buildTree(bestSets[0], bestSets[1], level = level+1)
+            falseBranch = self.buildTree(bestSets[2], bestSets[3], level = level+1)
+            return node(col=bestCriteria[0],value=bestCriteria[1], trueBranch=trueBranch, falseBranch=falseBranch)
         else:
-            return node(results=self.uniqueCounts(rows))
+            return node(results=self.uniqueCounts(Trows, Frows))
 
-    def fit(self, data, label, rows, columns):
+    def fit(self, data, label, rows, columns, sortedFeatures):
         '''
         初始化，并构造一棵树
         '''
@@ -151,8 +158,17 @@ class myTree:
         self.label = label
         self.rows = rows
         self.columns = columns
-        
-        self.root = self.buildTree(self.rows, level = 0)
+        self.sortedFeatures = sortedFeatures
+        Trows = []
+        Frows = []
+        for i in rows:  # 遍历每一个样本  lambda???
+            if self.label[i] == 1:
+                Trows.append(i)
+            if self.label[i] == 0:
+                Frows.append(i)
+
+        self.root = self.buildTree(Trows, Frows, level = 0)
+        #self.printTree(self.root)
     
     def printTree(self, node, indent='    '):  
         '''
